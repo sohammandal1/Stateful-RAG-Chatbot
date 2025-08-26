@@ -46,8 +46,8 @@ Follow these steps to get the chatbot running on your local machine.
 
 Open your terminal and clone the repository to your local machine:
 ```bash
-git clone <your-repository-url>
-cd <your-repository-name>
+git clone https://github.com/sohammandal1/Stateful-RAG-Chatbot
+cd Stateful-RAG-Chatbot
 ```
 
 ### 2. Set Up the Python Environment
