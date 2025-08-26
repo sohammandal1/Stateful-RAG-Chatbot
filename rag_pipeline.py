@@ -1,5 +1,7 @@
 # rag_pipeline.py
 import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
+from langchain_huggingface import HuggingFacePipeline, HuggingFaceEmbeddings
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from langchain_huggingface import HuggingFacePipeline, HuggingFaceEmbeddings
 from langchain_chroma import Chroma
@@ -12,15 +14,51 @@ from config import (
 )
 
 def initialize_llm(hf_token):
-    """Initializes the Gemma LLM and tokenizer using a token."""
+    """
+    Initializes the Gemma LLM, applying 4-bit quantization only if a
+    compatible CUDA GPU is available.
+    """
+    # --- Updated: Conditional Quantization Logic ---
+    if torch.cuda.is_available():
+        device = "cuda"
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16
+        )
+        print("✅ Using device: CUDA (with 4-bit Quantization)")
+    else:
+        # Fallback for MPS (Mac) or CPU
+        if torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu"
+        quantization_config = None
+        print(f"✅ Using device: {device.upper()} (Quantization disabled)")
+
+    # Load the tokenizer
     tokenizer = AutoTokenizer.from_pretrained(LLM_MODEL_NAME, token=hf_token)
+
+    # Load the model with the dynamic configuration
     llm_model = AutoModelForCausalLM.from_pretrained(
-        LLM_MODEL_NAME, token=hf_token, device_map="auto", torch_dtype=torch.float16
+        LLM_MODEL_NAME,
+        token=hf_token,
+        quantization_config=quantization_config,
+        device_map=device if quantization_config else None, # device_map is needed for quantization
+        torch_dtype=torch.float16 if device != "cpu" else torch.float32
     )
+
+    # The pipeline will use the device assigned by device_map or run on the specified device
     text_generation_pipeline = pipeline(
-        model=llm_model, tokenizer=tokenizer, task="text-generation",
-        return_full_text=False, max_new_tokens=100,
+        model=llm_model,
+        tokenizer=tokenizer,
+        task="text-generation",
+        # Pass device only if not using device_map (i.e., not quantizing)
+        device=None if quantization_config else device,
+        return_full_text=False,
+        max_new_tokens=100,
     )
+
     return HuggingFacePipeline(pipeline=text_generation_pipeline)
 
 def create_rag_chain(hf_token):
